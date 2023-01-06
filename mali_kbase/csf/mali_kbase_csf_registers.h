@@ -182,7 +182,7 @@
 #define GLB_PRFCNT_SIZE 0x0018 /* () Size of CSF performance counters */
 #define GLB_INSTR_FEATURES                                                     \
 	0x001C /* () TRACE_POINT instrumentation. (csf >= 1.1.0) */
-#define GROUP_CONTROL_0 0x1000 /* () CSG control and capabilities */
+#define GROUP_CONTROL_0 PAGE_SIZE /* () CSG control and capabilities */
 #define GROUP_CONTROL(n) (GROUP_CONTROL_0 + (n)*256)
 #define GROUP_CONTROL_REG(n, r) (GROUP_CONTROL(n) + GROUP_CONTROL_BLOCK_REG(r))
 #define GROUP_CONTROL_COUNT 16

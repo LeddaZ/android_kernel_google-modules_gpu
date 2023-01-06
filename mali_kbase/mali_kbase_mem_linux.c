@@ -1398,7 +1398,7 @@ static struct kbase_va_region *kbase_mem_from_umm(struct kbase_context *kctx,
 	int group_id;
 
 	/* 64-bit address range is the max */
-	if (*va_pages > (U64_MAX / PAGE_SIZE))
+	if (*va_pages > (U64_MAX / GPU_PAGE_SIZE))
 		return NULL;
 
 	dma_buf = dma_buf_get(fd);
@@ -1802,7 +1802,7 @@ u64 kbase_mem_alias(struct kbase_context *kctx, u64 *flags, u64 stride,
 	if (!nents)
 		goto bad_nents;
 
-	if (nents > (U64_MAX / PAGE_SIZE) / stride)
+	if (nents > (U64_MAX / GPU_PAGE_SIZE) / stride)
 		/* 64-bit address range is the max */
 		goto bad_size;
 

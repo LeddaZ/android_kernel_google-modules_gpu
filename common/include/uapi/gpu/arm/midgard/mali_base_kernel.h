@@ -47,7 +47,12 @@ struct base_mem_handle {
 #define LOCAL_PAGE_LSB ~PAGE_MASK
 #else
 #ifndef OSU_CONFIG_CPU_PAGE_SIZE_LOG2
+#if PAGE_SIZE == SZ_4K
 #define OSU_CONFIG_CPU_PAGE_SIZE_LOG2 12
+#elif PAGE_SIZE == SZ_16K
+#define OSU_CONFIG_CPU_PAGE_SIZE_LOG2 14
+#else error PAGE_SIZE is not defined, OSU_CONFIG_CPU_PAGE_SIZE_LOG2 is undefined.
+#endif
 #endif
 
 #if defined(OSU_CONFIG_CPU_PAGE_SIZE_LOG2)

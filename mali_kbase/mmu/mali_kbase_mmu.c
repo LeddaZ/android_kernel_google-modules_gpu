@@ -1365,7 +1365,7 @@ static void mmu_insert_pages_failure_recovery(struct kbase_device *kbdev,
 	struct kbase_mmu_mode const *mmu_mode;
 
 	/* 64-bit address range is the max */
-	KBASE_DEBUG_ASSERT(vpfn <= (U64_MAX / PAGE_SIZE));
+	KBASE_DEBUG_ASSERT(vpfn <= (U64_MAX / GPU_PAGE_SIZE));
 	KBASE_DEBUG_ASSERT(from_vpfn <= to_vpfn);
 
 	lockdep_assert_held(&mmut->mmu_lock);
@@ -1462,23 +1462,31 @@ int kbase_mmu_insert_single_page(struct kbase_context *kctx, u64 vpfn,
 	 * we need to be able to recover
 	 */
 	bool recover_required = false;
-	u64 start_vpfn = vpfn;
+	u64 start_vpfn;
 	size_t recover_count = 0;
-	size_t remain = nr;
+	size_t remain;
 	int err;
 	struct kbase_device *kbdev;
+	const phys_addr_t base_phys_address = as_phys_addr_t(phys);
 
 	if (WARN_ON(kctx == NULL))
 		return -EINVAL;
 
 	/* 64-bit address range is the max */
-	KBASE_DEBUG_ASSERT(vpfn <= (U64_MAX / PAGE_SIZE));
+	KBASE_DEBUG_ASSERT(vpfn <= (U64_MAX / GPU_PAGE_SIZE));
+	/* Physicyal address will be retrieved by masking lower 12 bits. */
+	KBASE_DEBUG_ASSERT((phys & ~PAGE_MASK_4K) == 0);
 
 	kbdev = kctx->kbdev;
 
 	/* Early out if there is nothing to do */
 	if (nr == 0)
 		return 0;
+
+	vpfn *= GPU_PAGES_PER_CPU_PAGE;
+	nr *= GPU_PAGES_PER_CPU_PAGE;
+	start_vpfn = vpfn;
+	remain = nr;
 
 	rt_mutex_lock(&kctx->mmu.mmu_lock);
 
@@ -1549,14 +1557,22 @@ int kbase_mmu_insert_single_page(struct kbase_context *kctx, u64 vpfn,
 		num_of_valid_entries =
 			kbdev->mmu_mode->get_num_valid_entries(pgd_page);
 
-		for (i = 0; i < count; i++) {
-			unsigned int ofs = index + i;
 
-			/* Fail if the current page is a valid ATE entry */
-			KBASE_DEBUG_ASSERT(0 == (pgd_page[ofs] & 1UL));
+		for (i = 0; i < count; i += GPU_PAGES_PER_CPU_PAGE) {
+			unsigned int j;
 
-			pgd_page[ofs] = kbase_mmu_create_ate(kbdev,
-				phys, flags, MIDGARD_MMU_BOTTOMLEVEL, group_id);
+			for (j = 0; j < GPU_PAGES_PER_CPU_PAGE; j++) {
+				unsigned int ofs = index + i + j;
+				phys_addr_t page_address =
+					base_phys_address + (j * GPU_PAGE_SIZE);
+
+				/* Fail if the current page is a valid ATE entry */
+				KBASE_DEBUG_ASSERT(0 == (pgd_page[ofs] & 1UL));
+
+				pgd_page[ofs] = kbase_mmu_create_ate(kbdev,
+					as_tagged(page_address), flags,
+					MIDGARD_MMU_BOTTOMLEVEL, group_id);
+			}
 		}
 
 		kbdev->mmu_mode->set_num_valid_entries(
@@ -1626,27 +1642,32 @@ u64 kbase_mmu_create_ate(struct kbase_device *const kbdev,
 
 int kbase_mmu_insert_pages_no_flush(struct kbase_device *kbdev,
 				    struct kbase_mmu_table *mmut,
-				    const u64 start_vpfn,
+				    u64 start_vpfn,
 				    struct tagged_addr *phys, size_t nr,
 				    unsigned long flags,
 				    int const group_id)
 {
 	phys_addr_t pgd;
 	u64 *pgd_page;
-	u64 insert_vpfn = start_vpfn;
-	size_t remain = nr;
+	u64 insert_vpfn;
+	size_t remain;
 	int err;
 	struct kbase_mmu_mode const *mmu_mode;
 
 	/* Note that 0 is a valid start_vpfn */
 	/* 64-bit address range is the max */
-	KBASE_DEBUG_ASSERT(start_vpfn <= (U64_MAX / PAGE_SIZE));
+	KBASE_DEBUG_ASSERT(start_vpfn <= (U64_MAX / GPU_PAGE_SIZE));
 
 	mmu_mode = kbdev->mmu_mode;
 
 	/* Early out if there is nothing to do */
 	if (nr == 0)
 		return 0;
+
+	start_vpfn *= GPU_PAGES_PER_CPU_PAGE;
+	nr *= GPU_PAGES_PER_CPU_PAGE;
+	insert_vpfn = start_vpfn;
+	remain = nr;
 
 	rt_mutex_lock(&mmut->mmu_lock);
 
@@ -1737,28 +1758,35 @@ int kbase_mmu_insert_pages_no_flush(struct kbase_device *kbdev,
 
 			num_of_valid_entries++;
 		} else {
-			for (i = 0; i < count; i++) {
-				unsigned int ofs = vindex + i;
-				u64 *target = &pgd_page[ofs];
+			for (i = 0; i < count; i += GPU_PAGES_PER_CPU_PAGE) {
+				phys_addr_t base_phys_address =
+					as_phys_addr_t(phys[i / GPU_PAGES_PER_CPU_PAGE]);
+				unsigned int j;
+				for (j = 0; j < GPU_PAGES_PER_CPU_PAGE; j++) {
+					unsigned int ofs = vindex + i + j;
+					u64 *target = &pgd_page[ofs];
+					phys_addr_t page_address =
+						base_phys_address + (j * GPU_PAGE_SIZE);
 
-				/* Warn if the current page is a valid ATE
-				 * entry. The page table shouldn't have anything
-				 * in the place where we are trying to put a
-				 * new entry. Modification to page table entries
-				 * should be performed with
-				 * kbase_mmu_update_pages()
-				 */
-				WARN_ON((*target & 1UL) != 0);
+					/* Warn if the current page is a valid ATE
+					 * entry. The page table shouldn't have anything
+					 * in the place where we are trying to put a
+					 * new entry. Modification to page table entries
+					 * should be performed with
+					 * kbase_mmu_update_pages()
+					 */
+					WARN_ON((*target & 1UL) != 0);
 
-				*target = kbase_mmu_create_ate(kbdev,
-					phys[i], flags, cur_level, group_id);
+					*target = kbase_mmu_create_ate(kbdev,
+						as_tagged(page_address), flags, cur_level, group_id);
+				}
 			}
 			num_of_valid_entries += count;
 		}
 
 		mmu_mode->set_num_valid_entries(pgd_page, num_of_valid_entries);
 
-		phys += count;
+		phys += (count / GPU_PAGES_PER_CPU_PAGE);
 		insert_vpfn += count;
 		remain -= count;
 
@@ -2093,8 +2121,8 @@ int kbase_mmu_teardown_pages(struct kbase_device *kbdev,
 	struct kbase_mmu_table *mmut, u64 vpfn, size_t nr, int as_nr)
 {
 	phys_addr_t pgd;
-	u64 start_vpfn = vpfn;
-	size_t requested_nr = nr;
+	u64 start_vpfn;
+	size_t requested_nr;
 	struct kbase_mmu_mode const *mmu_mode;
 	int err = -EFAULT;
 
@@ -2107,6 +2135,11 @@ int kbase_mmu_teardown_pages(struct kbase_device *kbdev,
 		/* early out if nothing to do */
 		return 0;
 	}
+
+	vpfn *= GPU_PAGES_PER_CPU_PAGE;
+	nr *= GPU_PAGES_PER_CPU_PAGE;
+	start_vpfn = vpfn;
+	requested_nr = nr;
 
 	if (!rt_mutex_trylock(&mmut->mmu_lock)) {
 		/*
@@ -2290,11 +2323,14 @@ static int kbase_mmu_update_pages_no_flush(struct kbase_context *kctx, u64 vpfn,
 	if (WARN_ON(kctx == NULL))
 		return -EINVAL;
 
-	KBASE_DEBUG_ASSERT(vpfn <= (U64_MAX / PAGE_SIZE));
+	KBASE_DEBUG_ASSERT(vpfn <= (U64_MAX / GPU_PAGE_SIZE));
 
 	/* Early out if there is nothing to do */
 	if (nr == 0)
 		return 0;
+
+	vpfn *= GPU_PAGES_PER_CPU_PAGE;
+	nr *= GPU_PAGES_PER_CPU_PAGE;
 
 	rt_mutex_lock(&kctx->mmu.mmu_lock);
 
@@ -2345,15 +2381,23 @@ static int kbase_mmu_update_pages_no_flush(struct kbase_context *kctx, u64 vpfn,
 				kbase_dma_addr(p) + (level_index * sizeof(u64)),
 				sizeof(u64));
 		} else {
-			for (i = 0; i < count; i++) {
+			for (i = 0; i < count; i += GPU_PAGES_PER_CPU_PAGE) {
 #ifdef CONFIG_MALI_DEBUG
 				WARN_ON_ONCE(!kbdev->mmu_mode->ate_is_valid(
 						pgd_page[index + i],
 						MIDGARD_MMU_BOTTOMLEVEL));
 #endif
-				pgd_page[index + i] = kbase_mmu_create_ate(kbdev,
-					phys[i], flags, MIDGARD_MMU_BOTTOMLEVEL,
-					group_id);
+				phys_addr_t base_phys_address =
+				as_phys_addr_t(phys[i / GPU_PAGES_PER_CPU_PAGE]);
+				unsigned int j;
+				for (j = 0; j < GPU_PAGES_PER_CPU_PAGE; j++) {
+					phys_addr_t page_address =
+						base_phys_address + (j * GPU_PAGE_SIZE);
+
+					pgd_page[index + i + j] = kbase_mmu_create_ate(kbdev,
+						as_tagged(page_address), flags,
+						MIDGARD_MMU_BOTTOMLEVEL, group_id);
+				}
 			}
 			kbase_mmu_sync_pgd(kbdev,
 				kbase_dma_addr(p) + (index * sizeof(u64)),
@@ -2363,7 +2407,7 @@ static int kbase_mmu_update_pages_no_flush(struct kbase_context *kctx, u64 vpfn,
 		kbdev->mmu_mode->set_num_valid_entries(pgd_page,
 					num_of_valid_entries);
 
-		phys += count;
+		phys += (count / GPU_PAGES_PER_CPU_PAGE);
 		vpfn += count;
 		nr -= count;
 

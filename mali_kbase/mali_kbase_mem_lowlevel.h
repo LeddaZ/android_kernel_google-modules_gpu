@@ -28,6 +28,11 @@
 
 #include <linux/dma-mapping.h>
 
+#define GPU_PAGE_SIZE  SZ_4K
+#define PAGE_MASK_4K   (~(SZ_4K - 1))
+
+#define GPU_PAGES_PER_CPU_PAGE  (PAGE_SIZE / GPU_PAGE_SIZE)
+
 /* Flags for kbase_phy_allocator_pages_alloc */
 #define KBASE_PHY_PAGES_FLAG_DEFAULT (0)	/** Default allocation flag */
 #define KBASE_PHY_PAGES_FLAG_CLEAR   (1 << 0)	/** Clear the pages after allocation */
@@ -68,7 +73,7 @@ struct tagged_addr { phys_addr_t tagged_addr; };
  */
 static inline phys_addr_t as_phys_addr_t(struct tagged_addr t)
 {
-	return t.tagged_addr & PAGE_MASK;
+	return t.tagged_addr & PAGE_MASK_4K;
 }
 
 /**
@@ -98,7 +103,7 @@ static inline struct tagged_addr as_tagged(phys_addr_t phys)
 {
 	struct tagged_addr t;
 
-	t.tagged_addr = phys & PAGE_MASK;
+	t.tagged_addr = phys & PAGE_MASK_4K;
 	return t;
 }
 
@@ -116,7 +121,7 @@ static inline struct tagged_addr as_tagged_tag(phys_addr_t phys, int tag)
 {
 	struct tagged_addr t;
 
-	t.tagged_addr = (phys & PAGE_MASK) | (tag & ~PAGE_MASK);
+	t.tagged_addr = (phys & PAGE_MASK_4K) | (tag & ~PAGE_MASK_4K);
 	return t;
 }
 

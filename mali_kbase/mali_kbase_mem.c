@@ -1542,7 +1542,7 @@ struct kbase_va_region *kbase_alloc_free_region(struct rb_root *rbtree,
 	KBASE_DEBUG_ASSERT((zone & ~KBASE_REG_ZONE_MASK) == 0);
 	KBASE_DEBUG_ASSERT(nr_pages > 0);
 	/* 64-bit address range is the max */
-	KBASE_DEBUG_ASSERT(start_pfn + nr_pages <= (U64_MAX / PAGE_SIZE));
+	KBASE_DEBUG_ASSERT(start_pfn + nr_pages <= (U64_MAX / GPU_PAGE_SIZE));
 
 	new_reg = kzalloc(sizeof(*new_reg), GFP_KERNEL);
 
@@ -2461,6 +2461,7 @@ int kbase_alloc_phy_pages_helper(struct kbase_mem_phy_alloc *alloc,
 	tp = alloc->pages + alloc->nents;
 
 #ifdef CONFIG_MALI_2MB_ALLOC
+#error Huge pages not yet updated for 16K CPU pages!
 	/* Check if we have enough pages requested so we can allocate a large
 	 * page (512 * 4KB = 2MB )
 	 */
