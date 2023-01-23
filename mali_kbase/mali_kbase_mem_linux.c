@@ -3200,16 +3200,7 @@ KBASE_EXPORT_TEST_API(kbase_vunmap);
 
 static void kbasep_add_mm_counter(struct mm_struct *mm, int member, long value)
 {
-#if (KERNEL_VERSION(4, 19, 0) <= LINUX_VERSION_CODE)
-	/* To avoid the build breakage due to an unexported kernel symbol
-	 * 'mm_trace_rss_stat' from later kernels, i.e. from V4.19.0 onwards,
-	 * we inline here the equivalent of 'add_mm_counter()' from linux
-	 * kernel V5.4.0~8.
-	 */
-	atomic_long_add(value, &mm->rss_stat.count[member]);
-#else
 	add_mm_counter(mm, member, value);
-#endif
 }
 
 void kbasep_os_process_page_usage_update(struct kbase_context *kctx, int pages)
