@@ -268,9 +268,11 @@ void kbase_csf_debug_dump_registers(struct kbase_device *kbdev)
 		kbase_reg_read(kbdev, GPU_CONTROL_REG(L2_MMU_CONFIG)),
 		kbase_reg_read(kbdev, GPU_CONTROL_REG(TILER_CONFIG)));
 	dev_err(kbdev->dev, "  MCU DB0: %x", kbase_reg_read(kbdev, DOORBELL_CFG_BASE + MCUC_DB_VALUE_0));
-	dev_err(kbdev->dev, "  MCU GLB_REQ %x GLB_ACK %x",
-			kbase_csf_firmware_global_input_read(global_iface, GLB_REQ),
-			kbase_csf_firmware_global_output(global_iface, GLB_ACK));
+
+	if (global_iface->kbdev && global_iface->input && global_iface->output)
+		dev_err(kbdev->dev, "  MCU GLB_REQ %x GLB_ACK %x",
+				kbase_csf_firmware_global_input_read(global_iface, GLB_REQ),
+				kbase_csf_firmware_global_output(global_iface, GLB_ACK));
 #undef MCUC_DB_VALUE_0
 #undef DOORBELL_CFG_BASE
 }
